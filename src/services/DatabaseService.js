@@ -180,6 +180,16 @@ class DatabaseService {
     return stmt.all(sessionId);
   }
 
+  deleteFramesForSession(sessionId) {
+    const stmt = this.db.prepare(`
+      DELETE FROM frames 
+      WHERE session_id = ?
+    `);
+
+    const result = stmt.run(sessionId);
+    return result.changes;
+  }
+
   // Settings operations
   setSetting(key, value) {
     const stmt = this.db.prepare(`

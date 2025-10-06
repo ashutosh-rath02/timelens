@@ -20,13 +20,13 @@ const Navigation = () => {
   ];
 
   return (
-    <nav className="bg-white shadow-sm border-b border-gray-100">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav className="bg-slate-800 shadow-lg">
+      <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-8">
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center space-x-3">
-              <span className="text-blue-600 text-3xl">📹</span>
-              <span>TimeLens</span>
+            <h1 className="text-2xl font-bold text-white flex items-center space-x-3">
+              <span className="text-blue-400 text-3xl">📹</span>
+              <span>Timelens</span>
             </h1>
           </div>
 
@@ -40,8 +40,8 @@ const Navigation = () => {
                   ${
                     location.pathname === item.path ||
                     (location.pathname === "/" && item.path === "/timeline")
-                      ? "bg-blue-50 text-blue-700 border border-blue-200 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700"
                   }
                 `}
               >
@@ -58,10 +58,10 @@ const Navigation = () => {
 
 function App() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-slate-50">
       <Router>
         <Navigation />
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Routes>
             <Route path="/" element={<Timeline />} />
             <Route path="/timeline" element={<Timeline />} />

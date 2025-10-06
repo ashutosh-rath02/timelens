@@ -30,43 +30,101 @@ class AIService {
   }
 
   async analyzeSession(sessionId, frames) {
-    try {
-      console.log(`Starting AI analysis for session: ${sessionId}`);
+    const startTime = Date.now();
+    console.log(
+      `Starting AI analysis for session: ${sessionId} with ${frames.length} frames`
+    );
 
+    try {
       const provider = this.providers[this.currentProvider];
 
-      // Gemini Flow: 2 LLM calls approach
-      // Step 1: Upload + Transcribe (analyze all frames as a video chunk)
-      const activities = await this.analyzeVideoChunk(frames);
+      // Step 1: Analyze frames with progress tracking
+      console.log(`Step 1: Analyzing ${frames.length} frames...`);
+      const activities = await this.analyzeVideoChunk(frames, sessionId);
 
-      // Step 2: Generate Cards (summarize into activity cards)
+      // Step 2: Generate summary with timing
+      console.log(`Step 2: Generating summary...`);
+      const summaryStartTime = Date.now();
       const summary = await provider.generateSummary(activities);
+      const summaryTime = Date.now() - summaryStartTime;
+      console.log(`Summary generated in ${summaryTime}ms`);
+
+      // Step 3: Generate title with timing
+      console.log(`Step 3: Generating title...`);
+      const titleStartTime = Date.now();
       const title = await provider.generateTitle(summary);
-      const segments =
-        activities.length > 5
-          ? await provider.segmentTimeline(activities)
-          : {
-              reasoning: "Not enough activities for segmentation",
-              segments: [
-                {
-                  startTimestamp: "00:00",
-                  endTimestamp: "End",
-                  description: summary,
-                },
-              ],
-            };
+      const titleTime = Date.now() - titleStartTime;
+      console.log(`Title generated in ${titleTime}ms`);
+
+      // Step 4: Generate detailed description
+      console.log(`Step 4: Generating detailed description...`);
+      const descriptionStartTime = Date.now();
+      const description = await provider.generateDescription(activities);
+      const descriptionTime = Date.now() - descriptionStartTime;
+      console.log(`Description generated in ${descriptionTime}ms`);
+
+      // Step 5: Generate timeline segments (with timeout protection)
+      let segments;
+      try {
+        segments =
+          activities.length > 5
+            ? await Promise.race([
+                provider.segmentTimeline(activities),
+                new Promise((_, reject) =>
+                  setTimeout(
+                    () => reject(new Error("Segmentation timeout")),
+                    30000
+                  )
+                ),
+              ])
+            : {
+                reasoning: "Not enough activities for segmentation",
+                segments: [
+                  {
+                    startTimestamp: "00:00",
+                    endTimestamp: "End",
+                    description: summary,
+                  },
+                ],
+              };
+      } catch (error) {
+        console.error("Segmentation failed, using fallback:", error.message);
+        segments = {
+          reasoning: "Segmentation failed due to timeout or error",
+          segments: [
+            {
+              startTimestamp: "00:00",
+              endTimestamp: "End",
+              description: summary,
+            },
+          ],
+        };
+      }
+
+      const totalTime = Date.now() - startTime;
+      console.log(
+        `AI analysis completed for session: ${sessionId} in ${totalTime}ms`
+      );
 
       const analysisResult = {
         sessionId,
         summary,
         title,
+        description,
         segments,
         activities,
         analyzedAt: moment().toISOString(),
         provider: this.currentProvider,
+        timing: {
+          totalTime,
+          summaryTime,
+          titleTime,
+          descriptionTime,
+          frameCount: frames.length,
+          processedFrames: activities.length,
+        },
       };
 
-      console.log(`AI analysis completed for session: ${sessionId}`);
       return analysisResult;
     } catch (error) {
       console.error("AI analysis failed:", error);
@@ -74,6 +132,7 @@ class AIService {
         sessionId,
         summary: "Analysis failed - manual review needed",
         title: "Recording Session",
+        description: "Unable to generate description due to analysis failure",
         segments: [],
         activities: [],
         analyzedAt: moment().toISOString(),
@@ -83,8 +142,9 @@ class AIService {
     }
   }
 
-  async analyzeVideoChunk(frames) {
+  async analyzeVideoChunk(frames, sessionId) {
     const provider = this.providers[this.currentProvider];
+    const startTime = Date.now();
 
     if (!provider.model) {
       return [
@@ -101,18 +161,43 @@ class AIService {
     try {
       console.log(`Analyzing video chunk with ${frames.length} frames`);
 
-      // Sample frames for analysis (every 5th frame to reduce processing)
-      const sampleFrames = frames.filter((_, index) => index % 5 === 0);
-      console.log(`Sampling ${sampleFrames.length} frames for analysis`);
+      // Sample frames for analysis (every 30th frame to reduce processing)
+      const sampleFrames = frames.filter((_, index) => index % 30 === 0);
+      console.log(
+        `Sampling ${sampleFrames.length} frames for analysis (reduced from ${frames.length})`
+      );
+
+      // Limit to maximum 10 frames for analysis
+      const maxFrames = Math.min(sampleFrames.length, 10);
+      const finalFrames = sampleFrames.slice(0, maxFrames);
+      console.log(`Final analysis set: ${finalFrames.length} frames (max 10)`);
 
       // Analyze multiple frames together for better context
       const activities = [];
+      const totalBatches = Math.ceil(finalFrames.length / 3);
 
-      for (let i = 0; i < sampleFrames.length; i += 3) {
-        const frameBatch = sampleFrames.slice(i, i + 3);
+      for (let i = 0; i < finalFrames.length; i += 3) {
+        const batchNumber = Math.floor(i / 3) + 1;
+        const frameBatch = finalFrames.slice(i, i + 3);
+
+        console.log(
+          `Processing batch ${batchNumber}/${totalBatches} (frames ${
+            i + 1
+          }-${Math.min(i + 3, finalFrames.length)})`
+        );
+        const batchStartTime = Date.now();
+
         const batchAnalysis = await this.analyzeFrameBatch(frameBatch);
+        const batchTime = Date.now() - batchStartTime;
+
+        console.log(`Batch ${batchNumber} completed in ${batchTime}ms`);
         activities.push(...batchAnalysis);
       }
+
+      const totalTime = Date.now() - startTime;
+      console.log(
+        `Frame analysis completed: ${activities.length} activities from ${finalFrames.length} frames in ${totalTime}ms`
+      );
 
       return activities;
     } catch (error) {
@@ -468,6 +553,73 @@ Return ONLY valid JSON (no markdown, no code blocks):
         reasoning: "API error occurred",
         title: "Recording Session",
       };
+    }
+  }
+
+  async generateDescription(activities) {
+    if (!this.model) {
+      return "Analysis unavailable - API key not set";
+    }
+
+    try {
+      const activitiesText = activities
+        .map((a) => `${a.timestamp}: ${a.activity}`)
+        .join("\n");
+
+      const prompt = `You are analyzing someone's computer activity from the last session. Create a detailed description with unique points of what the user did.
+
+Activity periods:
+${activitiesText}
+
+Create a detailed description that captures the unique activities and applications used. Focus on distinct actions and tasks.
+
+DESCRIPTION GUIDELINES:
+- Write in bullet points format
+- Each point should be a unique activity or task
+- Include specific app names, websites, content types
+- Mention specific activities like coding, watching videos, reading articles, etc.
+- Be detailed about what was actually happening
+- Focus on distinct, non-repetitive activities
+- Use action verbs: "Coded...", "Watched...", "Read...", "Browsed..."
+
+Return ONLY valid JSON (no markdown, no code blocks):
+{
+  "description": [
+    "• First unique activity with specific details",
+    "• Second unique activity with specific details",
+    "• Third unique activity with specific details"
+  ]
+}`;
+
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+
+      // Clean up the response - remove markdown code blocks
+      let cleanText = text.trim();
+      if (cleanText.startsWith("```json")) {
+        cleanText = cleanText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+      } else if (cleanText.startsWith("```")) {
+        cleanText = cleanText.replace(/^```\s*/, "").replace(/\s*```$/, "");
+      }
+
+      // Try to parse JSON response
+      try {
+        const parsed = JSON.parse(cleanText);
+        console.log("Gemini description generated:", parsed);
+        return parsed.description || ["No specific activities identified"];
+      } catch (parseError) {
+        console.error(
+          "Failed to parse Gemini description response:",
+          parseError
+        );
+        console.error("Raw response:", text);
+        console.error("Cleaned response:", cleanText);
+        return ["Failed to parse AI response"];
+      }
+    } catch (error) {
+      console.error("Gemini description generation failed:", error);
+      return ["Analysis failed - API error occurred"];
     }
   }
 

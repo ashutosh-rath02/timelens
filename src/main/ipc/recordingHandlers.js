@@ -60,7 +60,21 @@ class RecordingHandlers {
           };
         }
 
-        const latestSession = completedSessions[0];
+        // Get unanalyzed sessions
+        const unanalyzedSessions =
+          await this.recordingService.getUnanalyzedSessions();
+
+        if (unanalyzedSessions.length === 0) {
+          return {
+            success: false,
+            message: "All completed sessions have already been analyzed",
+          };
+        }
+
+        const sessionToAnalyze = unanalyzedSessions[0]; // Get the oldest unanalyzed session
+        console.log(
+          `Found unanalyzed session: ${sessionToAnalyze.id} (${unanalyzedSessions.length} total unanalyzed)`
+        );
 
         // Send processing status to renderer
         const mainWindow = require("electron").BrowserWindow.getAllWindows()[0];
@@ -73,7 +87,7 @@ class RecordingHandlers {
         }
 
         const result = await this.recordingService.analyzeSession(
-          latestSession.id
+          sessionToAnalyze.id
         );
 
         if (result.success) {
@@ -88,19 +102,10 @@ class RecordingHandlers {
             });
           }
 
-          // Automatically clean up raw frames after successful analysis
-          try {
-            const cleanupResult =
-              await this.recordingService.db.keepOnlyProcessedData();
-            console.log("Auto-cleanup completed:", cleanupResult);
-          } catch (cleanupError) {
-            console.error("Auto-cleanup failed:", cleanupError);
-          }
-
           return {
             success: true,
-            message: "Analysis completed and raw data cleaned up",
-            sessionId: latestSession.id,
+            message: "Analysis completed successfully",
+            sessionId: sessionToAnalyze.id,
             analysis: result.analysis,
           };
         } else {
@@ -310,10 +315,16 @@ class RecordingHandlers {
     ipcMain.handle("debug:getDatabaseStats", async () => {
       try {
         const stats = this.recordingService.db.getDatabaseStats();
-        return stats;
+        const unanalyzedSessions =
+          await this.recordingService.getUnanalyzedSessions();
+        return {
+          ...stats,
+          unanalyzedSessions: unanalyzedSessions.length,
+          unanalyzedSessionIds: unanalyzedSessions.map((s) => s.id),
+        };
       } catch (error) {
         console.error("IPC: Failed to get database stats:", error);
-        return { sessions: 0, frames: 0, analysis: 0 };
+        return { sessions: 0, frames: 0, analysis: 0, unanalyzedSessions: 0 };
       }
     });
 
